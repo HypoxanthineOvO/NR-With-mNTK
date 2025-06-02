@@ -1,5 +1,6 @@
 import torch
 from NTK import Evaluate_NTK, GetFuncParams
+from Modules import Hash
 
 if __name__ == "__main__":
     # 1. Linear Model's NTK
@@ -35,3 +36,22 @@ if __name__ == "__main__":
     # print("=" * 50)
     # print(f"Attention Model NTK Shape: {attention_ntk.shape}")
     # print(f"Attention Model Output Shape: {attention_result.shape}")
+
+    # 4. Hash Encoding Module
+    hash_config = 	{
+		"otype": "HashGrid",
+		"n_levels": 16,
+		"n_features_per_level": 2,
+		"log2_hashmap_size": 19,
+		"base_resolution": 16,
+		"per_level_scale": 1.38191288
+	}
+    hash_model = Hash.HashEncoding(3, hash_config)
+    x_hash_input = torch.randn(3, 3)  # (batch_size, input_dim)
+    func_hash, params_hash = GetFuncParams(hash_model, model_type="hash")
+    #print(func_hash, params_hash, params_hash.keys())
+    hash_ntk = Evaluate_NTK(func_hash, params_hash, x_hash_input, x_hash_input, compute='mNTK')
+    hash_result = hash_model(x_hash_input)
+    print("=" * 50)
+    print(f"Hash Encoding Model NTK Shape: {hash_ntk.shape}")
+    print(f"Hash Encoding Model Output Shape: {hash_result.shape}")

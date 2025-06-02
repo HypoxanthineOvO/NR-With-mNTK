@@ -8,6 +8,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*libpng warnin
 from utils import load_datasets, display_sample_images, dataset_to_tensor, sample_in_datasets
 
 from Models import CNN
+from NTK import GetEigenValuesData
 
 if __name__ == "__main__":
     num_epochs = 50
@@ -16,10 +17,12 @@ if __name__ == "__main__":
     LOAD_PRETRAINED = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    ntk_records = []
+    max_eigval_records = []
+    kappa_records = []
+    first_20_eigval = []
 
 
-    train_dataset, test_dataset, train_loader, test_loader = load_datasets(60000, 6000)
+    train_dataset, test_dataset, train_loader, test_loader = load_datasets(6000, 6000)
     print(f"Dataset Size: {len(train_dataset)} training samples, {len(test_dataset)} test samples")
 
     train_dataset_tensor = dataset_to_tensor(train_dataset)
@@ -55,26 +58,34 @@ if __name__ == "__main__":
                 t.set_postfix(loss=f'{loss.item():.4f}')
 
         # Evaluate NTK and condition number
-        ntks = {}
+        ntks_max_eigval = {}
+        ntks_kappa = {}
+        first_20_eigval = {}
         module_names = model.get_module_eval_ntk_name()
         # Set keys for NTK dictionary
         for module_name in module_names:
-            ntks[module_name] = []
+            ntks_max_eigval[module_name] = []
+            ntks_kappa[module_name] = []
+            first_20_eigval[module_name] = []
         with torch.no_grad():
             images = data_to_eval_ntk.to(device)
             model.eval()
             ntk_on_one_sample = []
-            for id in range(SAMPLE_TO_EVAL_NTK):
+            for id in tqdm.trange(SAMPLE_TO_EVAL_NTK):
                 image = images[id].unsqueeze(0)
                 _, ntk_each_modules = model.forward_with_evaluate_ntk(image)
                 for k, v in ntk_each_modules.items():
-                    assert k in ntks, f"Module {k} not found in NTK dictionary."
-                    eig_val = torch.linalg.eigvalsh((v + v.T) / 2)  # Ensure symmetry
-                    max_eig_val = eig_val.max().item()
-                    ntks[k].append(max_eig_val)
+                    eig_val_metrics = GetEigenValuesData(v)
+                    ntks_max_eigval[k].append(eig_val_metrics["max"])
+                    ntks_kappa[k].append(eig_val_metrics["cond_num"])
+                    first_20_eigval[k] = eig_val_metrics["max_20"]
                 
-        ntk_results = {k: np.mean(v) for k, v in ntks.items()}
-        ntk_records.append(ntk_results)
+        ntk_results = {k: np.mean(v) for k, v in ntks_max_eigval.items()}
+        kappa_results = {k: np.mean(v) for k, v in ntks_kappa.items()}
+
+        first_20_eigval_results = first_20_eigval
+        max_eigval_records.append(ntk_results)
+        kappa_records.append(kappa_results)
         
         
         with torch.no_grad():
@@ -91,15 +102,17 @@ if __name__ == "__main__":
             
         tqdm.tqdm.write(f"=============== Epoch {epoch+1}/{num_epochs} ===============")
         tqdm.tqdm.write(f"Accuracy: {100 * correct / total:.2f}%")
-        tqdm.tqdm.write("NTK Max Eigen Values:")
-        for k, v in ntk_results.items():
-            tqdm.tqdm.write(f"\tModule {k}: NTK Max Eigen Value: {v:.4f}")
+        tqdm.tqdm.write("NTK Eigen Values' Metrics:")
 
+        for k, v1, v2 in zip(ntk_results.keys(), ntk_results.values(), kappa_results.values()):
+            tqdm.tqdm.write(f"\tModule {k}: Max Eig Val: {v1:.4f}, Condition Number (Kappa): {v2:.4f}")
         # Draw the plot of NTK max eigen values
         if (epoch + 1) % 5 == 0 or epoch == num_epochs - 1:
-            plt.figure(figsize=(10, 6))
+        #if epoch >= 0:
+            plt.figure(figsize=(20, 6))
+            plt.subplot(1, 2, 1)
             for module_name in module_names:
-                values = [record[module_name] for record in ntk_records]
+                values = [record[module_name] for record in max_eigval_records]
                 x_ticks = np.arange(0, epoch + 1, 1, dtype = np.int32)
                 plt.plot(x_ticks, values, linestyle='-', marker='o', label=module_name)
             plt.xlabel('Epoch')
@@ -108,8 +121,19 @@ if __name__ == "__main__":
             plt.title('NTK Max Eigen Values Over Epochs')
             plt.legend()
             plt.grid()
-            plt.savefig(f"ntk_max_eigen_values_epoch_{epoch+1}.png")
-            plt.close()
+            plt.subplot(1, 2, 2)
+            for module_name in module_names:
+                values = [record[module_name] for record in kappa_records]
+                x_ticks = np.arange(0, epoch + 1, 1, dtype = np.int32)
+                plt.plot(x_ticks, values, linestyle='-', marker='o', label=module_name)
+            plt.xlabel('Epoch')
+            plt.xticks(np.arange(0, num_epochs + 1, 1, dtype = np.int32))
+            plt.ylabel('Condition Number (Kappa)')
+            plt.title('Condition Number Over Epochs')
+            plt.legend()
+            plt.grid()
+
+            plt.savefig(f"NTK_Eigval_Metrics_{epoch+1}.png")
 
 
 

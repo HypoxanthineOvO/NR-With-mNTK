@@ -13,6 +13,10 @@ def GetFuncParams(model: torch.nn.Module, model_type: str = "linear"):
     def model_func_attention(params, x: torch.Tensor):
         # print(f"Input shape for attention model: {x.shape}")
         return torch.func.functional_call(model, params, (x )).squeeze(0)
+    def model_func_hash(params, x: torch.Tensor):
+        # Hash Encoding Model: [NI] -> [NO] for single input
+        assert x.dim() == 1, "Input tensor must be a single 1D tensor for hash encoding model."
+        return torch.func.functional_call(model, params, (x.unsqueeze(0), )).squeeze(0)
 
     if model_type == "linear":
         model_func = model_func_linear
@@ -21,6 +25,8 @@ def GetFuncParams(model: torch.nn.Module, model_type: str = "linear"):
     elif model_type == "attention":
         raise NotImplementedError("Attention model is not implemented yet.")
         model_func = model_func_attention
+    elif model_type == "hash":
+        model_func = model_func_hash
     else:
         raise ValueError(f"Unknown model type: {model_type}. Expected 'linear', 'conv', or 'attention'.")
     return model_func, params
@@ -64,3 +70,18 @@ def Evaluate_NTK(
         return torch.einsum('NMKK->NMK', result)
     else:
         raise ValueError(f"Unknown compute type: {compute}. Expected 'full', 'trace', or 'diagonal'.")
+
+def GetEigenValuesData(raw: torch.Tensor):
+    results = {}
+    mat: torch.Tensor = (raw + raw.T) / 2 + torch.eye(raw.shape[0], device=raw.device) * 1e-5  # Ensure symmetry and numerical stability
+
+    eig_val = torch.linalg.eigh(mat)[0]  # Compute eigenvalues
+    sorted_eig_val, _ = torch.sort(eig_val, descending=True)  # Sort eigenvalues in descending order
+
+    eigval_nonzero = sorted_eig_val[sorted_eig_val > 0]
+
+    results['max'] = sorted_eig_val[0].item()  # Maximum eigenvalue
+    results['max_20'] = sorted_eig_val[:20].tolist()  # Top 20 eigenvalues
+    results['cond_num'] = sorted_eig_val[0].item() / eigval_nonzero[-1].item()
+    results['eig_val'] = sorted_eig_val.tolist()  # All eigenvalues
+    return results
