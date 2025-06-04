@@ -44,7 +44,7 @@ def render_image_with_eval_ntk(
     grid: nerfacc.OccGridEstimator,
     rays_o_total: torch.Tensor, rays_d_total: torch.Tensor,
     near: float = 0.6, far: float = 2.0, step_size: float = math.sqrt(3) / 1024,
-    batch_size = 10000
+    batch_size = 4
 ):
     num_pixels = rays_o_total.shape[0]
     rays_o = rays_o_total.cuda()
@@ -71,6 +71,10 @@ def render_image_with_eval_ntk(
     if(ray_indices.shape[0] <= 0):
         return torch.zeros([num_pixels, 3]).cuda(), []
         #continue
+    if (ray_indices.shape[0] > batch_size):
+        ray_indices = ray_indices[:batch_size]
+        t_starts = t_starts[:batch_size]
+        t_ends = t_ends[:batch_size]
 
     color, opacity, depth, extras = nerfacc.rendering(
         t_starts, t_ends, ray_indices, 

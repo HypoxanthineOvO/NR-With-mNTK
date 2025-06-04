@@ -195,4 +195,5 @@ cython_debug/
 
 
 data/
+snapshots/
 *.png

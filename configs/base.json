@@ -20,6 +20,11 @@
 			}
 		}
 	},
+	"nerf_encoding": {
+		"otype": "Frequency",
+		"n_frequencies": 12
+	},
+	"n_dims_to_encode": 3,
 	"encoding": {
 		"otype": "HashGrid",
 		"n_levels": 16,

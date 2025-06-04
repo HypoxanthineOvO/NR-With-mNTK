@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import warnings
 import nerfacc
 
+def modify_learning_rate(optimizer: torch.optim.Optimizer, lr: float = 0.001):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
 def load_datasets(dataset_size: int = 600, batch_size: int = 128):
     transform = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor(), 

@@ -17,8 +17,7 @@ def Read_PSNR(path: str) -> torch.Tensor:
     psnr_tensor = torch.tensor(psnr_values, dtype=torch.float32)
     return psnr_tensor
 
-def Load_NTK(path: str) -> torch.Tensor:
-    ntks = torch.load(path, map_location=torch.device('cpu'))
+def parse_NTK(ntks: list) -> dict:
 
     assert isinstance(ntks, list), "NTK data should be a list of dictionaries."
 
@@ -28,6 +27,10 @@ def Load_NTK(path: str) -> torch.Tensor:
             "Condition Number": [],
         },
         "rgb_network": {
+            "Max Eigenvalue": [],
+            "Condition Number": [],
+        },
+        "hash_encoding": {
             "Max Eigenvalue": [],
             "Condition Number": [],
         }
@@ -48,15 +51,27 @@ def Load_NTK(path: str) -> torch.Tensor:
             elif key == "rgb_network":
                 results["rgb_network"]["Max Eigenvalue"].append(eigvals['max'])
                 results["rgb_network"]["Condition Number"].append(eigvals['cond_num'])
+            elif key == "hash_encoding":
+                results["hash_encoding"]["Max Eigenvalue"].append(eigvals['max'])
+                results["hash_encoding"]["Condition Number"].append(eigvals['cond_num'])
     
     results["hash_network"]["Max Eigenvalue"] = np.array(results["hash_network"]["Max Eigenvalue"]).mean()
     results["hash_network"]["Condition Number"] = np.array(results["hash_network"]["Condition Number"]).mean()
     results["rgb_network"]["Max Eigenvalue"] = np.array(results["rgb_network"]["Max Eigenvalue"]).mean()
     results["rgb_network"]["Condition Number"] = np.array(results["rgb_network"]["Condition Number"]).mean()
+    results["hash_encoding"]["Max Eigenvalue"] = np.array(results["hash_encoding"]["Max Eigenvalue"]).mean()
+    results["hash_encoding"]["Condition Number"] = np.array(results["hash_encoding"]["Condition Number"]).mean()
+    return results
+
+def Load_NTK(path: str) -> torch.Tensor:
+    ntks = torch.load(path, map_location=torch.device('cpu'))
+    results = parse_NTK(ntks)
     print(f"Hash Network - Max Eigenvalue: {results['hash_network']['Max Eigenvalue']:.4e}, "
           f"Condition Number: {results['hash_network']['Condition Number']:.4e}")
     print(f"RGB Network - Max Eigenvalue: {results['rgb_network']['Max Eigenvalue']:.4e}, "
           f"Condition Number: {results['rgb_network']['Condition Number']:.4e}")
+    print(f"Hash Encoding - Max Eigenvalue: {results['hash_encoding']['Max Eigenvalue']:.4e}, "
+            f"Condition Number: {results['hash_encoding']['Condition Number']:.4e}")
     return results
 
 if __name__ == "__main__":
@@ -68,30 +83,39 @@ if __name__ == "__main__":
         "rgb_network": {
             "Max Eigenvalue": [],
             "Condition Number": [],
+        },
+        "hash_encoding": {
+            "Max Eigenvalue": [],
+            "Condition Number": [],
         }
     }
-    psnr_val = Read_PSNR("./PSNR_RECS")
-    max_steps = 25000
-    psnr_to_plot = psnr_val[:max_steps // 1000].numpy().tolist()
+    max_steps = 1000 * 4
     for step in range(0, max_steps, 1000):
         print(f"Loading NTK data for step {step}...")
+        print("=" * 50)
         result = Load_NTK(f"./snapshots/lego_ntk_{step}.pt")
         result_to_plot["hash_network"]["Max Eigenvalue"].append(result["hash_network"]["Max Eigenvalue"])
         result_to_plot["hash_network"]["Condition Number"].append(result["hash_network"]["Condition Number"])
         result_to_plot["rgb_network"]["Max Eigenvalue"].append(result["rgb_network"]["Max Eigenvalue"])
         result_to_plot["rgb_network"]["Condition Number"].append(result["rgb_network"]["Condition Number"])
+        result_to_plot["hash_encoding"]["Max Eigenvalue"].append(result["hash_encoding"]["Max Eigenvalue"])
+        result_to_plot["hash_encoding"]["Condition Number"].append(result["hash_encoding"]["Condition Number"])
 
     plt.figure(figsize=(8, 6))
     hash_max_eigenvalues = result_to_plot["hash_network"]["Max Eigenvalue"]
     rgb_max_eigenvalues = result_to_plot["rgb_network"]["Max Eigenvalue"]
 
     max_val = max(max(hash_max_eigenvalues), max(rgb_max_eigenvalues))
-    psnr_scaled = [val / 40 * max_val for val in psnr_to_plot]
-    plt.plot(
-        range(0, max_steps, 1000), 
-        psnr_scaled, 
-        label='PSNR (scaled)', marker='o'
-    )
+
+    if (os.path.exists("./PSNR_RECS")):
+        psnr_val = Read_PSNR("./PSNR_RECS")
+        psnr_to_plot = psnr_val[:max_steps // 1000].numpy().tolist()
+        psnr_scaled = [val / 40 * max_val for val in psnr_to_plot]
+        plt.plot(
+            range(0, max_steps, 1000), 
+            psnr_scaled, 
+            label='PSNR (scaled)', marker='o'
+        )
 
     plt.plot(
         range(0, max_steps, 1000), 
@@ -103,9 +127,14 @@ if __name__ == "__main__":
         result_to_plot["rgb_network"]["Max Eigenvalue"],
         label="RGB Network Max Eigenvalue", marker='o'
     )
+    plt.plot(
+        range(0, max_steps, 1000), 
+        result_to_plot["hash_encoding"]["Max Eigenvalue"],
+        label="Hash Encoding Max Eigenvalue", marker='o'
+    )
     plt.xlabel('Training Steps')
     plt.ylabel('Max Eigenvalue')
     plt.title('Max Eigenvalue of Networks Over Training Steps')
     plt.legend()
     plt.grid()
-    plt.show()
+    plt.savefig('ngp_eigenvalue_plot.png')
