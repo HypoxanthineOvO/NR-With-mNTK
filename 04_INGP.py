@@ -79,7 +79,7 @@ if __name__ == "__main__":
         flops = prof.get_total_flops()
         macs = prof.get_total_macs()
         params = prof.get_total_params()
-        prof.print_model_profile(profile_step = step // 1000, output_file = f"profile_{step}.txt")
+        #prof.print_model_profile(profile_step = step // 1000, output_file = f"profile_{step}.txt")
 
         with torch.no_grad():
             total_color = np.zeros([800 * 800, 3], dtype = np.float32)
@@ -119,7 +119,7 @@ if __name__ == "__main__":
             ntk_dict["psnr"] = psnr.item()
             print(f"Step {step}, PSNR = {round(psnr.item(), 4)}")
             torch.save(
-                ntk_dict, f"./snapshots/{scene_name}_ntk_{step}.pt"
+                ntk_dict, f"./Results/{scene_name}_ntk_{step}.pt"
             )
 
 
