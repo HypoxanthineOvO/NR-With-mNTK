@@ -11,8 +11,8 @@ from Models import CNN
 from NTK import GetEigenValuesData
 
 if __name__ == "__main__":
-    num_epochs = 50
-    SAMPLE_TO_EVAL_NTK = 10  # Number of samples to evaluate NTK
+    num_epochs = 25
+    SAMPLE_TO_EVAL_NTK = 5  # Number of samples to evaluate NTK
     learning_rate = 0.001
     LOAD_PRETRAINED = False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     first_20_eigval = []
 
 
-    train_dataset, test_dataset, train_loader, test_loader = load_datasets(6000, 6000)
+    train_dataset, test_dataset, train_loader, test_loader = load_datasets(10, 10)
     print(f"Dataset Size: {len(train_dataset)} training samples, {len(test_dataset)} test samples")
 
     train_dataset_tensor = dataset_to_tensor(train_dataset)
@@ -109,6 +109,8 @@ if __name__ == "__main__":
         # Draw the plot of NTK max eigen values
         if (epoch + 1) % 5 == 0 or epoch == num_epochs - 1:
         #if epoch >= 0:
+            torch.save(max_eigval_records, f"max_eigval_records_epoch_{epoch+1}.pt")
+            torch.save(kappa_records, f"kappa_records_epoch_{epoch+1}.pt")
             plt.figure(figsize=(20, 6))
             plt.subplot(1, 2, 1)
             for module_name in module_names:

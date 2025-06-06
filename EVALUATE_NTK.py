@@ -4,23 +4,7 @@ import matplotlib.pyplot as plt
 import os, sys, shutil
 from NTK import GetEigenValuesData
 
-def Read_PSNR(path: str) -> torch.Tensor:
-    with open(path, 'r') as file:
-        lines = file.readlines()
-    psnr_values = []
-    # Format: Step x, PSNR = y
-    for line in lines:
-        if "PSNR" in line:
-            parts = line.split(',')
-            psnr_value = float(parts[-1].split('=')[-1].strip())
-            psnr_values.append(psnr_value)
-    psnr_tensor = torch.tensor(psnr_values, dtype=torch.float32)
-    return psnr_tensor
-
-def parse_NTK(ntks: list) -> dict:
-
-    assert isinstance(ntks, list), "NTK data should be a list of dictionaries."
-
+def parse_NTK_in_training(ntks: dict) -> dict:
     results = {
         "hash_network": {
             "Max Eigenvalue": [],
@@ -37,13 +21,12 @@ def parse_NTK(ntks: list) -> dict:
         "hash_grids": [
             [] for _ in range(16)  # Assuming 16 hash grids
         ],
-        "psnr": -1
+        "psnr": None
     }
-    for i, ntk in enumerate(ntks):
-        #print(f"NTK {i+1}:")
-        key: str
-        value: torch.Tensor
-        for key, value in ntk[0].items():
+    key: str
+    value: torch.Tensor
+    for ntk in ntks:
+        for key, value in ntks[0].items():
             if key.startswith("hash_group_"):
                 group_i = key.split("_")[-1]
                 assert group_i.isdigit(), f"Key '{key}' does not end with a valid group index."
@@ -53,19 +36,78 @@ def parse_NTK(ntks: list) -> dict:
                     eigval['max']
                 )
                 continue
-            assert isinstance(value, torch.Tensor), f"Value for key '{key}' should be a torch.Tensor."
-            #print(f"  {key}:", end = " ")
+
             eigvals = GetEigenValuesData(value)
             #print(f"Max Eigenvalue: {eigvals['max']:.4e}, Condition Number: {eigvals['cond_num']:.4e}")
             if key == "hash_network":
-                results["hash_network"]["Max Eigenvalue"].append(eigvals['max'])
-                results["hash_network"]["Condition Number"].append(eigvals['cond_num'])
+                results["hash_network"]["Max Eigenvalue"].append(eigvals["max"])
+                results["hash_network"]["Condition Number"].append(eigvals["cond_num"])
             elif key == "rgb_network":
-                results["rgb_network"]["Max Eigenvalue"].append(eigvals['max'])
-                results["rgb_network"]["Condition Number"].append(eigvals['cond_num'])
+                results["rgb_network"]["Max Eigenvalue"].append(eigvals["max"])
+                results["rgb_network"]["Condition Number"].append(eigvals["cond_num"])
             elif key == "hash_encoding":
-                results["hash_encoding"]["Max Eigenvalue"].append(eigvals['max'])
-                results["hash_encoding"]["Condition Number"].append(eigvals['cond_num'])
+                results["hash_encoding"]["Max Eigenvalue"].append(eigvals["max"])
+                results["hash_encoding"]["Condition Number"].append(eigvals["cond_num"])
+            
+        
+    results["hash_network"]["Max Eigenvalue"] = np.array(results["hash_network"]["Max Eigenvalue"]).mean()
+    results["hash_network"]["Condition Number"] = np.array(results["hash_network"]["Condition Number"]).mean()
+    results["rgb_network"]["Max Eigenvalue"] = np.array(results["rgb_network"]["Max Eigenvalue"]).mean()
+    results["rgb_network"]["Condition Number"] = np.array(results["rgb_network"]["Condition Number"]).mean()
+    results["hash_encoding"]["Max Eigenvalue"] = np.array(results["hash_encoding"]["Max Eigenvalue"]).mean()
+    results["hash_encoding"]["Condition Number"] = np.array(results["hash_encoding"]["Condition Number"]).mean()
+    
+    for group_id, eigvals in enumerate(results["hash_grids"]):
+        results["hash_grids"][group_id] = np.array(eigvals).mean()
+        print(f"Hash Grid {group_id} - Max Eigenvalue: {results['hash_grids'][group_id]:.4e}")
+    
+
+    print("Lambda Max:")
+    print(f"Hash Encoding: {results['hash_encoding']['Max Eigenvalue']:.4e}")
+    print(f"Hash Network: {results['hash_network']['Max Eigenvalue']:.4e}") 
+    print(f"RGB Network: {results['rgb_network']['Max Eigenvalue']:.4e}")
+    return results
+
+
+def parse_NTK(ntks: dict) -> dict:
+    results = {
+        "hash_network": {
+            "Max Eigenvalue": [],
+            "Condition Number": [],
+        },
+        "rgb_network": {
+            "Max Eigenvalue": [],
+            "Condition Number": [],
+        },
+        "hash_encoding": {
+            "Max Eigenvalue": [],
+            "Condition Number": [],
+        },
+        "hash_grids": [
+            [] for _ in range(16)  # Assuming 16 hash grids
+        ],
+        "psnr": ntks["psnr"] if "psnr" in ntks else None
+    }
+    key: str
+    value: torch.Tensor
+    for key, value in ntks.items():
+        if key == "hash_grids":
+            for group_id in range(16):
+                results["hash_grids"][group_id].append(
+                    value[group_id].item()
+                )
+            continue
+        
+        #print(f"Max Eigenvalue: {eigvals['max']:.4e}, Condition Number: {eigvals['cond_num']:.4e}")
+        if key == "hash_network":
+            results["hash_network"]["Max Eigenvalue"].append(value["Max Eigenvalue"].item())
+            results["hash_network"]["Condition Number"].append(value["Condition Number"].item())
+        elif key == "rgb_network":
+            results["rgb_network"]["Max Eigenvalue"].append(value["Max Eigenvalue"].item())
+            results["rgb_network"]["Condition Number"].append(value["Condition Number"].item())
+        elif key == "hash_encoding":
+            results["hash_encoding"]["Max Eigenvalue"].append(value["Max Eigenvalue"].item())
+            results["hash_encoding"]["Condition Number"].append(value["Condition Number"].item())
     
     results["hash_network"]["Max Eigenvalue"] = np.array(results["hash_network"]["Max Eigenvalue"]).mean()
     results["hash_network"]["Condition Number"] = np.array(results["hash_network"]["Condition Number"]).mean()
@@ -75,14 +117,12 @@ def parse_NTK(ntks: list) -> dict:
     results["hash_encoding"]["Condition Number"] = np.array(results["hash_encoding"]["Condition Number"]).mean()
     #results["psnr"] = results["psnr"].item() if isinstance(results["psnr"], torch.Tensor) else results["psnr"]
     
-    # for group_id, eigvals in enumerate(results["hash_grids"]):
-    #     results["hash_grids"][group_id] = np.array(eigvals).mean()
-    #     print(f"Hash Grid {group_id} - Max Eigenvalue: {results['hash_grids'][group_id]:.4e}")
-    # print(f"PSNR: {results['psnr']:.4f}")
+    for group_id, eigvals in enumerate(results["hash_grids"]):
+        results["hash_grids"][group_id] = np.array(eigvals).mean()
     return results
 
 def Load_NTK(path: str) -> torch.Tensor:
-    ntks = torch.load(path, map_location=torch.device('cpu'))
+    ntks = torch.load(path, map_location=torch.device('cpu'), weights_only=False)
 
     results = parse_NTK(ntks)
     # print(f"Hash Network - Max Eigenvalue: {results['hash_network']['Max Eigenvalue']:.4e}, "
@@ -94,7 +134,7 @@ def Load_NTK(path: str) -> torch.Tensor:
     return results
 
 if __name__ == "__main__":
-    base_path: str = "./snapshots/Modify-OptScheduler-Baseline"
+    base_path: str = "./Results/Baseline"
     result_to_plot = {
         "hash_network": {
             "Max Eigenvalue": [],
@@ -108,9 +148,10 @@ if __name__ == "__main__":
             "Max Eigenvalue": [],
             "Condition Number": [],
         },
-        "hash_grids": [[] for _ in range(16)]  # Assuming 16 hash grids
+        "hash_grids": [[] for _ in range(16)],  # Assuming 16 hash grids
+        "psnrs": []
     }
-    max_steps = 1000 * 3
+    max_steps = 1000 * 25
     for step in range(0, max_steps, 1000):
         print(f"Loading NTK data for step {step}...")
         print("=" * 50)
@@ -121,6 +162,7 @@ if __name__ == "__main__":
         result_to_plot["rgb_network"]["Condition Number"].append(result["rgb_network"]["Condition Number"])
         result_to_plot["hash_encoding"]["Max Eigenvalue"].append(result["hash_encoding"]["Max Eigenvalue"])
         result_to_plot["hash_encoding"]["Condition Number"].append(result["hash_encoding"]["Condition Number"])
+        result_to_plot["psnrs"].append(result["psnr"] if result["psnr"] is not None else 0.0)
         for group_id in range(16):
             result_to_plot["hash_grids"][group_id].append(result["hash_grids"][group_id])
 
@@ -130,19 +172,12 @@ if __name__ == "__main__":
 
     max_val = max(max(hash_max_eigenvalues), max(rgb_max_eigenvalues))
 
-    plt.figure(figsize=(18, 6), dpi = 150)
+    plt.figure(figsize=(22, 6), dpi = 150)
     # Font: Arial
     plt.rcParams['font.family'] = 'serif'
-    plt.subplot(1, 2, 1)
-    if (os.path.exists("./PSNR_RECS")):
-        psnr_val = Read_PSNR("./PSNR_RECS")
-        psnr_to_plot = psnr_val[:max_steps // 1000].numpy().tolist()
-        psnr_scaled = [val / 40 * max_val for val in psnr_to_plot]
-        plt.plot(
-            range(0, max_steps, 1000), 
-            psnr_scaled, 
-            label='PSNR (scaled)', marker='o'
-        )
+    plt.subplot(1, 3, 1)
+    
+
 
     plt.plot(
         range(0, max_steps, 1000), 
@@ -169,7 +204,7 @@ if __name__ == "__main__":
     plt.title('Max Eigenvalue of Networks Over Training Steps', fontsize=18)
     plt.legend()
     plt.grid()
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, 3, 2)
 
     # Use a qualitative colormap with good distinction (e.g., 'tab20' for 16 groups)
     cmap = plt.get_cmap('tab20')
@@ -208,6 +243,17 @@ if __name__ == "__main__":
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
 
-    #plt.tight_layout()
+    plt.subplot(1, 3, 3)
+    plt.plot(
+        range(0, max_steps, 1000), 
+        result_to_plot["psnrs"],
+        label='PSNR (scaled)', marker='o'
+    )
+    plt.xlabel('Training Steps', fontsize=14)
+    plt.ylabel('PSNR', fontsize=14)
+    plt.title('PSNR Over Training Steps', fontsize=18)
+    plt.yscale('linear')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend()
 
     plt.savefig('ngp_eigenvalue_plot.png')

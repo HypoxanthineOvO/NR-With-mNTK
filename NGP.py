@@ -80,7 +80,7 @@ class InstantNGP(torch.nn.Module):
         self.grid.load_state_dict(init_params_grid)
 
 
-    def load_snapshot(self, path: str):
+    def load_snapshot(self, path: str, modules = None):
         with open(path, 'rb') as f:
             unpacker = msgpack.Unpacker(f, raw = False, max_buffer_size = 0)
             snapshot = next(unpacker)
@@ -111,9 +111,18 @@ class InstantNGP(torch.nn.Module):
         grid[x * 128 * 128 + y * 128 + z] = grid_raw
         grid_3d = torch.reshape(grid > 0.01, [1, 128, 128, 128]).type(torch.bool)
         
-        self.hash_g.load_states(params_hashgrid)
-        self.hash_n.load_states(params_hashnet)
-        self.mlp.load_states(params_rgbnet)
+
+        if modules is not None:
+            if ("hash_g" in modules):
+                self.hash_g.load_states(params_hashgrid)
+            if ("hash_n" in modules):
+                self.hash_n.load_states(params_hashnet)
+            if ("mlp" in modules):
+                self.mlp.load_states(params_rgbnet)
+        else:
+            self.hash_g.load_states(params_hashgrid)
+            self.hash_n.load_states(params_hashnet)
+            self.mlp.load_states(params_rgbnet)
         self.grid.load_state_dict({
             "resolution": torch.tensor([128, 128, 128], dtype = torch.int32),
             "aabbs": torch.tensor([[0, 0, 0, 1, 1, 1]]),

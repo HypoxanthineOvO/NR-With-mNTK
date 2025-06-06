@@ -1,8 +1,9 @@
 import torch
 import json
-from NTK import Evaluate_NTK, GetFuncParams
+from NTK import Evaluate_NTK, Evaluate_NTK_Multiple, GetFuncParams
 from Modules import Hash
 from NGP import InstantNGP
+from BERT import MultiHeadAttention
 
 if __name__ == "__main__":
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,16 +30,23 @@ if __name__ == "__main__":
 	# print(f"Convolutional Model Output Shape: {conv_result.shape}")
 
 	# 3. Attention Model's NTK
-	# attention_model: torch.nn.MultiheadAttention = torch.nn.MultiheadAttention(embed_dim=10, num_heads=2)
-	# x_attention_input = torch.randn(3, 5, 10)  # (sequence_length, batch_size, embedding_dim)
-	# attention_func, attention_params = GetFuncParams(attention_model, model_type="attention")
-	# attention_ntk = Evaluate_NTK(attention_func, attention_params, x_attention_input, x_attention_input, compute='mNTK')
-	# attention_result = attention_model(
-	#     query = x_attention_input, key = x_attention_input, value = x_attention_input
-	# )[0]
-	# print("=" * 50)
-	# print(f"Attention Model NTK Shape: {attention_ntk.shape}")
-	# print(f"Attention Model Output Shape: {attention_result.shape}")
+	attention_model = torch.nn.MultiheadAttention(30, 2)
+	x_attention_input = torch.randn(1, 30, 30)  # (sequence_length, batch_size, embedding_dim)
+
+	attention_mask = torch.ones(30, 1, dtype = torch.bool)  # (sequence_length, batch_size, sequence_length)
+	
+	attention_params = dict(attention_model.named_parameters())
+	def model_function_attention(params, x: torch.Tensor):
+		q,k,v = x.unsqueeze(0), x.unsqueeze(0), x.unsqueeze(0)
+		return torch.func.functional_call(attention_model, params, (q,k,v, attention_mask))
+
+	attention_ntk = Evaluate_NTK(
+		model_function_attention, attention_params, 
+		x_attention_input,
+		x_attention_input, 
+		compute='mNTK')
+	print("=" * 50)
+	print(f"Attention Model NTK Shape: {attention_ntk.shape}")
 
 	# 4. Hash Encoding Module
 #   hash_config = 	{
@@ -60,11 +68,11 @@ if __name__ == "__main__":
 #   print(f"Hash Encoding Model Output Shape: {hash_result.shape}")
 
 	# 5. Instant NGP
-	with open("./configs/base.json", "r") as f:
-			config = json.load(f)
-	ngp = InstantNGP(config, True).to(device)
-	ngp_input_position = torch.randn(2, 3).to(device)  # (batch_size, input_dim)
-	ngp_input_direction = torch.randn(2, 3).to(device)  # (batch_size, input_dim)
-	_, ntk_records = ngp.forward_with_evaluate_ntk(ngp_input_position, ngp_input_direction)
-	print("=" * 50)
-	print(ntk_records)
+	# with open("./configs/base.json", "r") as f:
+	# 		config = json.load(f)
+	# ngp = InstantNGP(config, True).to(device)
+	# ngp_input_position = torch.randn(2, 3).to(device)  # (batch_size, input_dim)
+	# ngp_input_direction = torch.randn(2, 3).to(device)  # (batch_size, input_dim)
+	# _, ntk_records = ngp.forward_with_evaluate_ntk(ngp_input_position, ngp_input_direction)
+	# print("=" * 50)
+	# print(ntk_records)

@@ -11,8 +11,9 @@ def GetFuncParams(model: torch.nn.Module, model_type: str = "linear"):
         assert x.dim() == 3, "Input tensor must be a single 3D tensor for convolutional model."
         return torch.func.functional_call(model, params, (x, )).flatten()
     def model_func_attention(params, x: torch.Tensor):
-        # print(f"Input shape for attention model: {x.shape}")
-        return torch.func.functional_call(model, params, (x )).squeeze(0)
+        print(f"Input shape for attention model: {x.shape}")
+        
+        return torch.func.functional_call(model, params, (x, ))
     def model_func_hash(params, x: torch.Tensor):
         # Hash Encoding Model: [NI] -> [NO] for single input
         assert x.dim() == 1, "Input tensor must be a single 1D tensor for hash encoding model."
@@ -23,7 +24,7 @@ def GetFuncParams(model: torch.nn.Module, model_type: str = "linear"):
     elif model_type == "conv":
         model_func = model_func_conv
     elif model_type == "attention":
-        raise NotImplementedError("Attention model is not implemented yet.")
+        #raise NotImplementedError("Attention model is not implemented yet.")
         model_func = model_func_attention
     elif model_type == "hash":
         model_func = model_func_hash
@@ -50,7 +51,6 @@ def Evaluate_NTK(
             vjps = vjp_fn(vec)
             _, jvps = torch.func.jvp(func_x2, (params,), vjps)
             return jvps
-
         basis = torch.eye(output.numel(), dtype=output.dtype, device=output.device).view(output.numel(), -1)
         return torch.func.vmap(get_ntk_slice)(basis)
     
@@ -70,6 +70,66 @@ def Evaluate_NTK(
         return torch.einsum('NMKK->NMK', result)
     else:
         raise ValueError(f"Unknown compute type: {compute}. Expected 'full', 'trace', or 'diagonal'.")
+
+import torch
+from typing import Callable, Union, Dict, Tuple
+
+def Evaluate_NTK_Multiple(
+    func: Callable,
+    params: Union[Dict[str, torch.Tensor], torch.Tensor],
+    x1: Union[Tuple[torch.Tensor, ...], torch.Tensor],
+    x2: Union[Tuple[torch.Tensor, ...], torch.Tensor],
+    compute: str = 'full'
+) -> torch.Tensor:
+    """
+    Compute Neural Tangent Kernel (NTK) between x1 and x2.
+
+    Args:
+        func: Model function with signature func(params, inputs).
+        params: Parameters of the model (usually a dict or flat tensor).
+        x1: Input tensor(s), can be a single tensor or tuple of tensors.
+        x2: Input tensor(s), can be a single tensor or tuple of tensors.
+        compute: Type of output to return. Options: 'full', 'trace', 'diagonal', 'mNTK'
+
+    Returns:
+        NTK matrix/kernel.
+    """
+
+    def get_ntk(x_a, x_b):
+        def func_xa(p):
+            return func(p, x_a)
+
+        def func_xb(p):
+            return func(p, x_b)
+
+        # Get output and VJP function
+        out_xa, vjp_fn = torch.func.vjp(func_xa, params)
+
+        def get_ntk_slice(vec):
+            vjps = vjp_fn(vec)
+            _, jvps = torch.func.jvp(func_xb, (params,), vjps)
+            return jvps
+
+        basis = torch.eye(out_xa.numel(), device=out_xa.device, dtype=out_xa.dtype)
+        return torch.func.vmap(get_ntk_slice)(basis)
+
+    result = torch.func.vmap(torch.func.vmap(get_ntk, (None, 0)), (0, None))(x1, x2)
+
+    if compute == "mNTK":
+        N, M, K, _ = result.shape
+        result = result.permute(0, 2, 1, 3).contiguous().view(N * K, M * K)
+    elif compute == "full":
+        pass
+    elif compute == "trace":
+        result = torch.einsum('NMKK->NM', result)
+    elif compute == "diagonal":
+        result = torch.einsum('NMKK->NMK', result)
+    else:
+        raise ValueError(f"Unknown compute type: {compute}. Expected 'full', 'trace', or 'diagonal'.")
+
+    return result
+
+
 
 def GetEigenValuesData(raw: torch.Tensor):
     results = {}

@@ -12,7 +12,7 @@ from Data import NeRFSynthetic, load_density_grid
 from NGP import InstantNGP
 from utils import Camera, modify_learning_rate
 from Render import render_image, render_image_with_eval_ntk
-from EVALUATE_NTK import parse_NTK
+from EVALUATE_NTK import parse_NTK_in_training
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--scene", type = str, default = "lego")
@@ -63,10 +63,10 @@ if __name__ == "__main__":
     # 将原 trange 包装为可动态更新描述的进度条对象
     for i in trange(25):
         step = i * 1000
-        ngp.load_snapshot(f"./snapshots/Baseline/ngp_step_{step}.msgpack")
+        ngp.load_snapshot(fr"./snapshots/01_SigMLP*5/ngp_step_{step}.msgpack")
 
 
-        prof.start_profile()
+        # prof.start_profile()
         
         # 数据采样与渲染计算
         pixels, rays_o, rays_d = dataset.sample(batch_size)
@@ -75,10 +75,10 @@ if __name__ == "__main__":
         loss = torch.nn.functional.smooth_l1_loss(color, pixels)
 
 
-        prof.stop_profile()
-        flops = prof.get_total_flops()
-        macs = prof.get_total_macs()
-        params = prof.get_total_params()
+        # prof.stop_profile()
+        # flops = prof.get_total_flops()
+        # macs = prof.get_total_macs()
+        # params = prof.get_total_params()
         #prof.print_model_profile(profile_step = step // 1000, output_file = f"profile_{step}.txt")
 
         with torch.no_grad():
@@ -108,22 +108,15 @@ if __name__ == "__main__":
                     ngp, ngp.grid, rays_o_total, rays_d_total,
                 )
                 if (len(ntk_records) > 0):
-                    total_ntk_records.append(ntk_records)
+                    total_ntk_records.extend(ntk_records)
                     nonzero_cnt += len(ntk_records)
                 if nonzero_cnt > 8:
                     break
                 torch.cuda.empty_cache()
             # Modular Adaptive Training
-            ntk_dict: dict = parse_NTK(total_ntk_records)
-            print(ntk_dict)
+            ntk_dict: dict = parse_NTK_in_training(total_ntk_records)
             ntk_dict["psnr"] = psnr.item()
-            print(f"Step {step}, PSNR = {round(psnr.item(), 4)}")
+            tqdm.write(f"Step {step}, PSNR = {round(psnr.item(), 4)}")
             torch.save(
                 ntk_dict, f"./Results/{scene_name}_ntk_{step}.pt"
             )
-
-
-        torch.cuda.empty_cache()
-        if (step % 5000 == 0) and (step > 0):
-            tqdm.write(f"Saving snapshot at step {step}...")
-            ngp.save_snapshot(path = f"./snapshots/{scene_name}_{step}.msgpack", load_path = "./snapshots/base.msgpack")

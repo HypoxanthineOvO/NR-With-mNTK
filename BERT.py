@@ -1,16 +1,20 @@
 import torch.nn as nn
 import torch
 import numpy as np
+import math
 # BERT Parameters
 maxlen = 30
 batch_size = 6
 max_pred = 5 # max tokens of prediction
 n_layers = 6
-n_heads = 12
-d_model = 768
-d_ff = 768*4 # 4*d_model, FeedForward dimension
+n_heads = 2
+d_model = 30
+d_ff = d_model*4 # 4*d_model, FeedForward dimension
+
 d_k = d_v = 64  # dimension of K(=Q), V
 n_segments = 2
+vocab_size = 10
+
 def get_attn_pad_mask(seq_q, seq_k):
     batch_size, seq_len = seq_q.size()
     # eq(zero) is PAD token
@@ -59,24 +63,27 @@ class MultiHeadAttention(nn.Module):
         self.W_K = nn.Linear(d_model, d_k * n_heads)
         self.W_V = nn.Linear(d_model, d_v * n_heads)
 
+        self.attn_mask = None  # 用于存储注意力掩码
 
         self.out_proj = nn.Linear(n_heads * d_v, d_model)
         self.norm = nn.LayerNorm(d_model)
 
         # 注意力模块保持使用原来的定义方式
         self.attn = ScaledDotProductAttention()
+    def set_attn_mask(self, attn_mask):
+        self.attn_mask = attn_mask
 
-    def forward(self, Q, K, V, attn_mask):
-        batch_size = Q.size(0)
-        residual = Q
+    def forward(self, X):
+        batch_size = X.size(0)
+        residual = X
 
         # Linear -> reshape -> transpose to [B, H, S, d_k/d_v]
-        q_s = self.W_Q(Q).view(batch_size, -1, n_heads, d_k).transpose(1, 2)
-        k_s = self.W_K(K).view(batch_size, -1, n_heads, d_k).transpose(1, 2)
-        v_s = self.W_V(V).view(batch_size, -1, n_heads, d_v).transpose(1, 2)
+        q_s = self.W_Q(X).view(batch_size, -1, n_heads, d_k).transpose(1, 2)
+        k_s = self.W_K(X).view(batch_size, -1, n_heads, d_k).transpose(1, 2)
+        v_s = self.W_V(X).view(batch_size, -1, n_heads, d_v).transpose(1, 2)
 
         # Expand mask: [B, 1, S, S] -> [B, H, S, S]
-        attn_mask = attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)
+        attn_mask = self.attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)
 
         # Self-attention
         context = self.attn(q_s, k_s, v_s, attn_mask)  # [B, H, S, d_v]
