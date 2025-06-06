@@ -37,7 +37,7 @@ def Evaluate_NTK(
         compute: str = 'full'
     ) -> torch.Tensor:
     # X1 and X2 Shape:
-    # print(f"x1 shape: {x1.shape}, x2 shape: {x2.shape}")
+    
     def get_ntk(x1, x2):
         def func_x1(params):
             return func(params, x1)
@@ -54,7 +54,7 @@ def Evaluate_NTK(
         basis = torch.eye(output.numel(), dtype=output.dtype, device=output.device).view(output.numel(), -1)
         return torch.func.vmap(get_ntk_slice)(basis)
     
-    result = torch.func.vmap(torch.func.vmap(get_ntk, (None, 0)), (0, None))(x1, x2) 
+    result = torch.func.vmap(torch.func.vmap(get_ntk, (None, 0)), (0, None))(x1, x2)
     # print(result.shape)
     if compute == "mNTK":
         N, M, K, _ = result.shape

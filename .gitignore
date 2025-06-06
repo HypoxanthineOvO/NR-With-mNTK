@@ -196,4 +196,8 @@ cython_debug/
 
 data/
 snapshots/
+results/
+[Deperated]*
 *.png
+*.msgpack
+\[Deperated]04_INGP.py

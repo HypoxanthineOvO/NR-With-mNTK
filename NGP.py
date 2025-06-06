@@ -201,7 +201,26 @@ class InstantNGP(torch.nn.Module):
         hash_features_raw = hash_features_raw.type(torch.float32)
         func_hash, params_hash = GetFuncParams(self.hash_g, model_type="hash")
         ntk_hash = Evaluate_NTK(func_hash, params_hash, position, position, compute='mNTK')
+        for i in range(16):
+            # 定义子函数，捕获当前的i值（避免延迟绑定问题）
+            def func_sub(params, x, group_idx=i):
+                full_output = func_hash(params, x)
+                return full_output[2*group_idx : 2*group_idx + 2]
+            # 计算子模型的NTK
+            ntk_sub = Evaluate_NTK(func_sub, params_hash, position, position, compute='mNTK')
+            #print(f"Group {i} NTK shape: {ntk_sub.shape}")
+            # 保存到字典中
+            ntks[f"hash_group_{i}"] = ntk_sub
+
         ntks["hash_encoding"] = ntk_hash#.cpu().detach()
+
+        #func_hash_lev, params_hash_lev = GetFuncParams(
+        #    self.hash_g.forward_single_level, model_type="hash"
+        #)
+        #ntk_hash_lev = Evaluate_NTK(
+        #    func_hash_lev, params_hash_lev, position, position, compute='mNTK'
+        #)
+        #ntks["hash_encoding_single_level"] = ntk_hash_lev#.cpu().detach()
 
         # Hash Network
         sigma_features = self.hash_n(hash_features_raw)
